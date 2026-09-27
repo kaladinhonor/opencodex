@@ -190,8 +190,10 @@ that value takes precedence over the OpenCodex proxy in `~/.claude/settings.json
 then goes around OpenCodex and routed models fail there, while the standalone CLI keeps working.
 Add `api.anthropic.com` to your proxy client's system-proxy bypass list (in Clash Verge,
 `system_proxy_bypass`), then fully quit and reopen Claude Desktop. `ocx doctor` reports this
-under "Claude Desktop first-party vs Windows system proxy". It cannot evaluate a PAC script, so
-with one, make the script return `DIRECT` for `api.anthropic.com`.
+under "Claude Desktop first-party vs Windows system proxy". It cannot evaluate a PAC script or
+automatic proxy detection (WPAD, "Automatically detect settings"), so it reports those as unknown;
+with either, make the script return `DIRECT` for `api.anthropic.com` or turn detection off. If the
+first-party settings are stale, it asks you to run `ocx ensure` instead of reporting `ok`.
 :::
 
 Subagents on routed (non-Claude) models do not use Claude Code's server-side message threads, because only Anthropic stores that state. OpenCodex declines a threaded request for such a model, and Claude Code resends that turn, and the turns after it, with the full conversation.

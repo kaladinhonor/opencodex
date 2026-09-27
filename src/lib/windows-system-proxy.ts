@@ -117,16 +117,68 @@ export function readWindowsSystemProxy(
 
 /**
  * The two values that decide whether a host skips the static proxy: `ProxyOverride` (the bypass
- * list) and `AutoConfigURL` (a PAC script, which takes over the decision entirely). Read on
- * demand by diagnostics only; startup discovery above still ignores both.
+ * list) and `AutoConfigURL` (a PAC script, which takes over the decision entirely), plus the
+ * "Automatically detect settings" (WPAD) flag, which can also pick a proxy per request. Read on
+ * demand by diagnostics only; startup discovery above still ignores all three.
  */
 export interface WindowsProxyBypassValues {
   proxyOverride: string | null;
   autoConfigUrl: string | null;
+  /** `null` when the connection-settings blob could not be read: detection may be on. */
+  autoDetect: boolean | null;
 }
 
-export function readWindowsProxyBypassRegistry(): WindowsProxyBypassValues {
-  return { proxyOverride: queryValue("ProxyOverride"), autoConfigUrl: queryValue("AutoConfigURL") };
+/** Output lines of `reg query <key>`, or `null` when the key could not be read at all. */
+export type WindowsRegistryKeyLister = (key: string) => string | null;
+
+function listRegistryKey(key: string): string | null {
+  try {
+    const stdout = execFileSync(registryExe(), ["query", key], {
+      encoding: "buffer",
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: 2000,
+      maxBuffer: 256 * 1024,
+      windowsHide: true,
+    });
+    return decodeWindowsTextBytes(stdout);
+  } catch {
+    return null;
+  }
+}
+
+function registryValue(listing: string, name: string): string | null {
+  for (const row of listing.split(/\r?\n/)) {
+    // "    Name    REG_TYPE    data" (data is absent for an empty string)
+    const match = row.match(/^ {4}(\S.*?) {4}(REG_[A-Z_]+)(?: {4}(.*))?$/);
+    if (match && match[1]!.toLowerCase() === name.toLowerCase()) return (match[3] ?? "").trim();
+  }
+  return null;
+}
+
+/**
+ * WinINET `DefaultConnectionSettings` stores its flags in the ninth byte; 0x08 is
+ * "Automatically detect settings". Anything unparseable returns `null` (unknown), never `false`.
+ */
+export function parseWindowsAutoDetect(hex: string | null): boolean | null {
+  if (!hex || !/^[0-9a-f]{18,}$/i.test(hex)) return null;
+  return (Number.parseInt(hex.slice(16, 18), 16) & 0x08) !== 0;
+}
+
+/**
+ * Reads the bypass values from one listing of the Internet Settings key, so an absent value
+ * (`null`) is distinguishable from a failed read (the whole result is `null`).
+ */
+export function readWindowsProxyBypassRegistry(
+  list: WindowsRegistryKeyLister = listRegistryKey,
+): WindowsProxyBypassValues | null {
+  const settings = list(INTERNET_SETTINGS_KEY);
+  if (settings === null) return null;
+  const connections = list(`${INTERNET_SETTINGS_KEY}\\Connections`);
+  return {
+    proxyOverride: registryValue(settings, "ProxyOverride"),
+    autoConfigUrl: registryValue(settings, "AutoConfigURL") || null,
+    autoDetect: connections === null ? null : parseWindowsAutoDetect(registryValue(connections, "DefaultConnectionSettings")),
+  };
 }
 
 /**

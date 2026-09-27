@@ -86,10 +86,13 @@ host when it spawns the Code tab and, for an HTTP answer, passes it as `HTTPS_PR
 only Claude Code managed settings override that, so a Windows system proxy without a bypass for
 `api.anthropic.com` silently routes the Code tab around the intercept. OpenCodex cannot fix this
 from its side without writing machine-wide managed settings or the user's proxy configuration, so
-`src/claude/desktop-system-proxy.ts` only observes it: on Windows with Desktop first-party applied,
-`ocx doctor` reads `ProxyEnable`/`ProxyServer`/`ProxyOverride`/`AutoConfigURL` and reports a
-conflict, a bypass, no covering proxy, or an undecidable PAC script. It never prints the proxy value
-and never records a doctor failure, because the CLI and other clients still route.
+`src/claude/desktop-system-proxy.ts` only observes it: on Windows with a Desktop first-party env
+(applied or stale), `ocx doctor` reads `ProxyEnable`/`ProxyServer`/`ProxyOverride`/`AutoConfigURL`
+and the auto-detect (WPAD) flag in `Connections\DefaultConnectionSettings`, and reports a conflict,
+a bypass, no covering proxy, or an undecidable PAC script or WPAD. A failed registry read is
+reported as unreadable, never as an absent value, and a stale settings env never earns an `ok`. It
+never prints the proxy value and never records a doctor failure, because the CLI and other clients
+still route.
 
 Surfaces: `ocx claude desktop apply [--first-party|--gateway]` in `src/cli/claude-desktop.ts`;
 `ocx claude config set --first-party on|off` and the Claude Code page switch control the CLI intent; `ocx ensure` refreshes a stale or absent env while it is on.
