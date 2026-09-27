@@ -81,6 +81,16 @@ Disabling Desktop integration removes its gateway profile. It removes the owned 
 only when `claudeCode.cliFirstParty` is not set; otherwise the env stays for the CLI. With Desktop
 first-party ON, `ocx ensure` re-applies a stale env; the proxy port follows the public port.
 
+The settings env does not win everywhere. Desktop resolves the operating-system proxy for the API
+host when it spawns the Code tab and, for an HTTP answer, passes it as `HTTPS_PROXY`/`HTTP_PROXY`;
+only Claude Code managed settings override that, so a Windows system proxy without a bypass for
+`api.anthropic.com` silently routes the Code tab around the intercept. OpenCodex cannot fix this
+from its side without writing machine-wide managed settings or the user's proxy configuration, so
+`src/claude/desktop-system-proxy.ts` only observes it: on Windows with Desktop first-party applied,
+`ocx doctor` reads `ProxyEnable`/`ProxyServer`/`ProxyOverride`/`AutoConfigURL` and reports a
+conflict, a bypass, no covering proxy, or an undecidable PAC script. It never prints the proxy value
+and never records a doctor failure, because the CLI and other clients still route.
+
 Surfaces: `ocx claude desktop apply [--first-party|--gateway]` in `src/cli/claude-desktop.ts`;
 `ocx claude config set --first-party on|off` and the Claude Code page switch control the CLI intent; `ocx ensure` refreshes a stale or absent env while it is on.
 `POST /api/claude-desktop/apply` with `mode` ∈ `first-party|gateway|static|hybrid|discovery` and

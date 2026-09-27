@@ -184,6 +184,16 @@ working. OpenCodex only writes two variables into the `env` block of `~/.claude/
 
 Claude Desktop first-party routes its Code tab and subagents through OpenCodex. The standalone Claude Code CLI has a separate first-party switch. Both clients read the same `~/.claude/settings.json` proxy and CA settings: if only one switch is on, the other client still transits the local proxy, where TLS terminates, but its Messages requests relay to Anthropic unchanged. Other Anthropic paths relay unchanged and unrelated hosts remain blind tunnels.
 
+:::note[Windows system proxy (Clash, v2rayN, corporate proxies)]
+When a Windows system proxy is on, Claude Desktop hands it to the Code tab as `HTTPS_PROXY`, and
+that value takes precedence over the OpenCodex proxy in `~/.claude/settings.json`. The Code tab
+then goes around OpenCodex and routed models fail there, while the standalone CLI keeps working.
+Add `api.anthropic.com` to your proxy client's system-proxy bypass list (in Clash Verge,
+`system_proxy_bypass`), then fully quit and reopen Claude Desktop. `ocx doctor` reports this
+under "Claude Desktop first-party vs Windows system proxy". It cannot evaluate a PAC script, so
+with one, make the script return `DIRECT` for `api.anthropic.com`.
+:::
+
 Subagents on routed (non-Claude) models do not use Claude Code's server-side message threads, because only Anthropic stores that state. OpenCodex declines a threaded request for such a model, and Claude Code resends that turn, and the turns after it, with the full conversation.
 
 Mode is persisted as `claudeCode.desktopMode`. Installs that already applied either mode retain it,

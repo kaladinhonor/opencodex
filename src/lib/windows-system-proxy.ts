@@ -10,7 +10,8 @@ import { decodeWindowsTextBytes } from "./windows-text";
  * normalized `http://host:port` URL when a static proxy is enabled. PAC/WPAD, per-request
  * resolution, ProxyOverride, live refresh, and direct fallback are deliberately out of scope:
  * this is the piece an operator can audit from one log line, and everything else needs the
- * transport boundary the reviewer asked for first.
+ * transport boundary the reviewer asked for first. The bypass readers further down serve
+ * `ocx doctor` only; egress discovery does not consult them.
  */
 
 const INTERNET_SETTINGS_KEY = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings";
@@ -112,6 +113,53 @@ export function readWindowsSystemProxy(
   if (!enabled) return { kind: "disabled" };
   if (!values.proxyServer) return { kind: "disabled" };
   return parseWindowsProxyServer(values.proxyServer);
+}
+
+/**
+ * The two values that decide whether a host skips the static proxy: `ProxyOverride` (the bypass
+ * list) and `AutoConfigURL` (a PAC script, which takes over the decision entirely). Read on
+ * demand by diagnostics only; startup discovery above still ignores both.
+ */
+export interface WindowsProxyBypassValues {
+  proxyOverride: string | null;
+  autoConfigUrl: string | null;
+}
+
+export function readWindowsProxyBypassRegistry(): WindowsProxyBypassValues {
+  return { proxyOverride: queryValue("ProxyOverride"), autoConfigUrl: queryValue("AutoConfigURL") };
+}
+
+/**
+ * Whether a WinINET `ProxyOverride` list exempts an HTTPS `host` (port 443). Entries are
+ * semicolon separated, case-insensitive, and may use `*` wildcards, a leading `.` for
+ * subdomains, an optional `scheme://` prefix and an optional `:port`. `<local>` matches only
+ * dotless names, so it never exempts a public API host.
+ */
+export function windowsProxyOverrideBypasses(proxyOverride: string | null, host: string): boolean {
+  if (!proxyOverride) return false;
+  const target = host.toLowerCase();
+  for (const raw of proxyOverride.split(";")) {
+    let entry = raw.trim().toLowerCase();
+    if (!entry) continue;
+    if (entry === "<local>") {
+      if (!target.includes(".")) return true;
+      continue;
+    }
+    const scheme = entry.match(/^([a-z][a-z0-9+.-]*):\/\//);
+    if (scheme) {
+      if (scheme[1] !== "https") continue;
+      entry = entry.slice(scheme[0].length);
+    }
+    const port = entry.match(/:(\d+)$/);
+    if (port) {
+      if (port[1] !== "443") continue;
+      entry = entry.slice(0, -port[0].length);
+    }
+    if (entry.startsWith(".")) entry = `*${entry}`;
+    const pattern = new RegExp(`^${entry.split("*").map(part => part.replace(/[.+?^${}()|[\]\\]/g, "\\$&")).join(".*")}$`);
+    if (pattern.test(target)) return true;
+  }
+  return false;
 }
 
 /** Log-safe form: origin only, so a credentialed value can never reach the console. */
